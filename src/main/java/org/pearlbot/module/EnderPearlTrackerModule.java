@@ -188,6 +188,26 @@ public class EnderPearlTrackerModule extends Module {
         }
 
         PearlBotConfig.StasisChamber existing = PLUGIN_CONFIG.chambers.get(pearlUuid);
+        if (existing == null) {
+            // Hybrid backup: same trapdoor column, different pearl UUID (e.g. the
+            // pearl entity churned while out of view). Re-key under the new UUID
+            // so the previously-resolved owner survives.
+            UUID staleKey = null;
+            for (var e : PLUGIN_CONFIG.chambers.entrySet()) {
+                PearlBotConfig.StasisChamber c = e.getValue();
+                if (c.x == trapdoor.x && c.z == trapdoor.z) {
+                    staleKey = e.getKey();
+                    existing = c;
+                    break;
+                }
+            }
+            if (staleKey != null) {
+                PLUGIN_CONFIG.chambers.remove(staleKey);
+                PLUGIN_CONFIG.chambers.put(pearlUuid, existing);
+                info("Recovered chamber via column backup: re-keyed pearl {} -> {} (owner {}) at ({}, {}, {})",
+                    staleKey, pearlUuid, existing.ownerUuid, existing.x, existing.y, existing.z);
+            }
+        }
         if (existing != null) {
             // Pearl entity re-appeared (chunk reload, reconnect, came back into view).
             // Refresh transient fields but PRESERVE the previously-resolved owner if we don't
@@ -279,28 +299,24 @@ public class EnderPearlTrackerModule extends Module {
         int[] ids = packet.getEntityIds();
         if (ids.length == 0) return;
 
-        var player = CACHE.getPlayerCache() != null ? CACHE.getPlayerCache().getThePlayer() : null;
-        if (player == null) return;
-        double px = player.getX();
-        double py = player.getY();
-        double pz = player.getZ();
-        double viewSq = (double) PLUGIN_CONFIG.pearlViewDistance * PLUGIN_CONFIG.pearlViewDistance;
+        var chunkCache = CACHE.getChunkCache();
+        if (chunkCache == null) return;
 
         PLUGIN_CONFIG.chambers.entrySet().removeIf(e -> {
             var c = e.getValue();
             for (int id : ids) {
                 if (id != c.entityId) continue;
-                double dx = c.x - px;
-                double dy = c.y - py;
-                double dz = c.z - pz;
-                double distSq = dx * dx + dy * dy + dz * dz;
-                if (distSq <= viewSq) {
-                    info("Removing chamber for owner {} (pearl {}): entity {} despawned within view ({} <= {} blocks sq)",
-                        c.ownerUuid, e.getKey(), id, distSq, viewSq);
-                    return true;
+                // If the chunk holding the chamber is still loaded, the pearl
+                // entity was genuinely consumed (pulled). If it isn't loaded,
+                // the bot left render distance — keep the chamber as a backup.
+                if (chunkCache.getChunkSection(c.x, c.y, c.z) == null) {
+                    debug("Pearl entity {} despawned but chunk at ({}, {}, {}) is unloaded; keeping chamber",
+                        id, c.x, c.y, c.z);
+                    return false;
                 }
-                debug("Pearl entity {} despawned outside view distance ({} > {} blocks sq); keeping chamber",
-                    id, distSq, viewSq);
+                info("Removing chamber for owner {} (pearl {}): entity {} despawned with chunk still loaded at ({}, {}, {})",
+                    c.ownerUuid, e.getKey(), id, c.x, c.y, c.z);
+                return true;
             }
             return false;
         });
