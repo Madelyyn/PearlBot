@@ -351,7 +351,13 @@ public class AutoPearlModule extends Module {
         if (now - lastAttemptMs < PULL_RETRY_INTERVAL_MS) return;
         lastAttemptMs = now;
 
-        executePull(PLUGIN_CONFIG.pendingPulls.get(0));
+        PearlBotConfig.PendingPull next = PLUGIN_CONFIG.pendingPulls.get(0);
+        if (!isChamberInRange(next.blockX, next.blockY, next.blockZ)) {
+            debug("Chamber for {} at ({}, {}, {}) is outside loaded chunks; deferring pull",
+                labelOf(next), next.blockX, next.blockY, next.blockZ);
+            return;
+        }
+        executePull(next);
     }
 
     private String labelOf(PearlBotConfig.PendingPull pull) {
@@ -394,6 +400,12 @@ public class AutoPearlModule extends Module {
         activePullStartMs = 0L;
         readyAtTrapdoor = false;
         readyAtMs = 0L;
+    }
+
+    private boolean isChamberInRange(int x, int y, int z) {
+        if (CACHE == null) return false;
+        var chunkCache = CACHE.getChunkCache();
+        return chunkCache != null && chunkCache.getChunkSection(x, y, z) != null;
     }
 
     private boolean isOwnerOnline(UUID ownerUuid) {
