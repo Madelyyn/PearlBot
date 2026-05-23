@@ -32,6 +32,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.Clie
 import org.pearlbot.PearlBotConfig;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.github.rfresh2.EventConsumer.of;
@@ -47,7 +48,25 @@ public class EnderPearlTrackerModule extends Module {
 
     @Override
     public List<EventConsumer<?>> registerEvents() {
-        return List.of(of(ClientBotTick.class, e -> resolvePendingOwners()));
+        return List.of(
+            of(ClientBotTick.class, e -> resolvePendingOwners()),
+            of(ClientBotTick.Stopped.class, e -> invalidateStalePendingOwners())
+        );
+    }
+
+    @Override
+    public void onEnable() {
+        // entityIds reset across sessions; any value persisted from a prior run is meaningless.
+        invalidateStalePendingOwners();
+    }
+
+    private void invalidateStalePendingOwners() {
+        if (PLUGIN_CONFIG.chambers.isEmpty()) return;
+        for (var chamber : PLUGIN_CONFIG.chambers.values()) {
+            if (chamber.pendingOwnerEntityId != null) {
+                chamber.pendingOwnerEntityId = null;
+            }
+        }
     }
 
     @Override
@@ -92,6 +111,9 @@ public class EnderPearlTrackerModule extends Module {
     private void tryRegister(UUID pearlUuid, int entityId, int ownerEntityId,
                              double x, double y, double z) {
         UUID ownerUuid = resolveOwnerUuid(ownerEntityId);
+        if (ownerUuid == null) {
+            ownerUuid = resolveOwnerByProximity(x, y, z);
+        }
         Integer pendingOwnerEntityId = (ownerUuid == null && ownerEntityId > 0) ? ownerEntityId : null;
         registerChamber(pearlUuid, entityId, ownerUuid, pendingOwnerEntityId, x, y, z);
     }
@@ -100,6 +122,10 @@ public class EnderPearlTrackerModule extends Module {
         if (PLUGIN_CONFIG.chambers.isEmpty()) return;
         for (var entry : PLUGIN_CONFIG.chambers.entrySet()) {
             var chamber = entry.getValue();
+            if (chamber.ownerUuid != null) {
+                chamber.pendingOwnerEntityId = null;
+                continue;
+            }
             if (chamber.pendingOwnerEntityId == null) continue;
             UUID resolved = resolveOwnerUuid(chamber.pendingOwnerEntityId);
             if (resolved == null) continue;
@@ -115,7 +141,41 @@ public class EnderPearlTrackerModule extends Module {
         var entityCache = CACHE.getEntityCache();
         if (entityCache == null) return null;
         Entity owner = entityCache.getEntities().get(ownerEntityId);
-        return owner != null ? owner.getUuid() : null;
+        if (owner == null) return null;
+        // Only treat players as valid owners — stale ids from prior sessions can collide with mobs/items.
+        if (owner.getEntityType() != EntityType.PLAYER) return null;
+        return owner.getUuid();
+    }
+
+    private UUID resolveOwnerByProximity(double pearlX, double pearlY, double pearlZ) {
+        var entityCache = CACHE.getEntityCache();
+        if (entityCache == null) return null;
+        Map<Integer, Entity> entities = entityCache.getEntities();
+        if (entities == null || entities.isEmpty()) return null;
+
+        UUID botUuid = null;
+        var profileCache = CACHE.getProfileCache();
+        if (profileCache != null && profileCache.getProfile() != null) {
+            botUuid = profileCache.getProfile().getId();
+        }
+
+        Entity closest = null;
+        double closestDistSq = 4.0; // within 2 blocks of pearl spawn
+        for (Entity entity : entities.values()) {
+            if (entity.getEntityType() != EntityType.PLAYER) continue;
+            UUID id = entity.getUuid();
+            if (id == null) continue;
+            if (botUuid != null && botUuid.equals(id)) continue;
+            double dx = entity.getX() - pearlX;
+            double dy = entity.getY() - pearlY;
+            double dz = entity.getZ() - pearlZ;
+            double distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq < closestDistSq) {
+                closestDistSq = distSq;
+                closest = entity;
+            }
+        }
+        return closest != null ? closest.getUuid() : null;
     }
 
     private void registerChamber(UUID pearlUuid, int entityId, UUID ownerUuid,
@@ -127,6 +187,32 @@ public class EnderPearlTrackerModule extends Module {
             return;
         }
 
+        PearlBotConfig.StasisChamber existing = PLUGIN_CONFIG.chambers.get(pearlUuid);
+        if (existing != null) {
+            // Pearl entity re-appeared (chunk reload, reconnect, came back into view).
+            // Refresh transient fields but PRESERVE the previously-resolved owner if we don't
+            // have a better answer right now. Otherwise restarts "forget" pearl owners.
+            existing.x = trapdoor.x;
+            existing.y = trapdoor.y;
+            existing.z = trapdoor.z;
+            existing.entityId = entityId;
+            if (ownerUuid != null) {
+                if (!ownerUuid.equals(existing.ownerUuid)) {
+                    info("Chamber (pearl {}) owner updated to {} at ({}, {}, {})",
+                        pearlUuid, ownerUuid, existing.x, existing.y, existing.z);
+                }
+                existing.ownerUuid = ownerUuid;
+                existing.pendingOwnerEntityId = null;
+            } else if (existing.ownerUuid == null) {
+                // still don't know — keep retrying via pendingOwnerEntityId
+                existing.pendingOwnerEntityId = pendingOwnerEntityId;
+            }
+            // If we already knew the owner, ignore pendingOwnerEntityId entirely.
+            debug("Refreshed chamber for owner {} (pearl {}) at trapdoor ({}, {}, {})",
+                existing.ownerUuid, pearlUuid, existing.x, existing.y, existing.z);
+            return;
+        }
+
         PearlBotConfig.StasisChamber chamber = new PearlBotConfig.StasisChamber();
         chamber.x = trapdoor.x;
         chamber.y = trapdoor.y;
@@ -134,20 +220,15 @@ public class EnderPearlTrackerModule extends Module {
         chamber.entityId = entityId;
         chamber.ownerUuid = ownerUuid;
         chamber.pendingOwnerEntityId = pendingOwnerEntityId;
-        PearlBotConfig.StasisChamber prev = PLUGIN_CONFIG.chambers.put(pearlUuid, chamber);
+        PLUGIN_CONFIG.chambers.put(pearlUuid, chamber);
 
         String ownerLabel = ownerUuid != null
             ? ownerUuid.toString()
             : (pendingOwnerEntityId != null
                 ? "unknown (waiting on entity " + pendingOwnerEntityId + ")"
                 : "unknown (no thrower)");
-        if (prev == null) {
-            info("Registered new chamber for owner {} (pearl {}) at trapdoor ({}, {}, {})",
-                ownerLabel, pearlUuid, chamber.x, chamber.y, chamber.z);
-        } else {
-            debug("Updated chamber for owner {} (pearl {}) at trapdoor ({}, {}, {})",
-                ownerLabel, pearlUuid, chamber.x, chamber.y, chamber.z);
-        }
+        info("Registered new chamber for owner {} (pearl {}) at trapdoor ({}, {}, {})",
+            ownerLabel, pearlUuid, chamber.x, chamber.y, chamber.z);
     }
 
     private TrapdoorPos findTrapdoor(double x, double y, double z) {
