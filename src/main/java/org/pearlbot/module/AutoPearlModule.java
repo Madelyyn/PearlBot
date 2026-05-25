@@ -136,9 +136,9 @@ public class AutoPearlModule extends Module {
             long count = PLUGIN_CONFIG.chambers.values().stream()
                 .filter(c -> uuid.equals(c.ownerUuid))
                 .count();
-            int max = PLUGIN_CONFIG.maxPearlsPerPlayer;
+            int max = PLUGIN_CONFIG.maxChambersPerPlayer;
             String countStr = max > 0 ? count + "/" + max : String.valueOf(count);
-            sendWhisper(name, "You have " + countStr + " pearl(s) stasised.");
+            sendWhisper(name, "You have " + countStr + " pearl(s) set.");
             return;
         }
 
@@ -312,24 +312,24 @@ public class AutoPearlModule extends Module {
         sendClientPacketAsync(ChatUtil.getWhisperChatPacket(name, message + " - " + suffix));
     }
 
-    public void checkAndEnforceMaxPearls(UUID ownerUuid) {
-        int max = PLUGIN_CONFIG.maxPearlsPerPlayer;
+    public void checkAndEnforceMaxChambers(UUID ownerUuid) {
+        int max = PLUGIN_CONFIG.maxChambersPerPlayer;
         if (max <= 0) return;
         long count = PLUGIN_CONFIG.chambers.values().stream()
             .filter(c -> ownerUuid.equals(c.ownerUuid))
             .count();
         if (count <= max) return;
         String name = resolvePlayerName(ownerUuid);
-        info("Player {} has {} pearl(s), exceeding max of {}; auto-pulling",
+        info("Player {} has {} chamber(s), exceeding max of {}; auto-pulling oldest",
             name != null ? name : ownerUuid, count, max);
+        // chambers is a LinkedHashMap, so findChamberFor returns the oldest registered chamber.
+        PearlBotConfig.StasisChamber chamber = findChamberFor(ownerUuid);
+        if (chamber == null) return;
         if (name != null) {
             sendWhisper(name, "You have " + count + " pearl(s) but the max is " + max
-                + "! Automatically pulling your oldest pearl.");
+                + "! Pulling your oldest pearl.");
         }
-        PearlBotConfig.StasisChamber chamber = findChamberFor(ownerUuid);
-        if (chamber != null) {
-            enqueuePull(ownerUuid, name, chamber);
-        }
+        enqueuePull(ownerUuid, name, chamber);
     }
 
     private String resolvePlayerName(UUID uuid) {

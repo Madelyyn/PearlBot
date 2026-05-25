@@ -30,7 +30,7 @@ public class PearlBotConfig {
     public int trapdoorScanRadius = 5;
     public int pullTimeoutSeconds = 30;
     public int waitForOwnerSeconds = 180;
-    public int maxPearlsPerPlayer = 0;
+    public int maxChambersPerPlayer = 0;
 
     public final IdleGoal idleGoal = new IdleGoal();
     public static class IdleGoal {

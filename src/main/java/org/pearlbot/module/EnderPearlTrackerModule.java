@@ -216,7 +216,7 @@ public class EnderPearlTrackerModule extends Module {
         PLUGIN_CONFIG.chambers.put(pearlUuid, chamber);
 
         if (ownerUuid != null) {
-            MODULE.get(AutoPearlModule.class).checkAndEnforceMaxPearls(ownerUuid);
+            MODULE.get(AutoPearlModule.class).checkAndEnforceMaxChambers(ownerUuid);
         }
 
         String ownerLabel = ownerUuid != null

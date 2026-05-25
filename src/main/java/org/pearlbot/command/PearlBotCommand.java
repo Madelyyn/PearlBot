@@ -73,7 +73,7 @@ public class PearlBotCommand extends Command {
                 "discord channel <channelId>",
                 "links",
                 "unlink <playerName>",
-                "maxpearls <count>"
+                "maxchambers <count>"
             )
             .aliases("pb")
             .build();
@@ -137,7 +137,7 @@ public class PearlBotCommand extends Command {
             for (var chamber : PLUGIN_CONFIG.chambers.values()) {
                 byOwner.computeIfAbsent(chamber.ownerUuid, k -> new java.util.ArrayList<>()).add(chamber);
             }
-            int max = PLUGIN_CONFIG.maxPearlsPerPlayer;
+            int max = PLUGIN_CONFIG.maxChambersPerPlayer;
             StringBuilder sb = new StringBuilder();
             for (var entry : byOwner.entrySet()) {
                 var list = entry.getValue();
@@ -402,12 +402,12 @@ public class PearlBotCommand extends Command {
                 return OK;
             })));
 
-        builder.then(literal("maxpearls")
+        builder.then(literal("maxchambers")
             .then(argument("count", integer(0)).executes(c -> {
-                PLUGIN_CONFIG.maxPearlsPerPlayer = getInteger(c, "count");
-                c.getSource().getEmbed().title(PLUGIN_CONFIG.maxPearlsPerPlayer == 0
-                    ? "Max pearls per player: unlimited"
-                    : "Max pearls per player set to " + PLUGIN_CONFIG.maxPearlsPerPlayer);
+                PLUGIN_CONFIG.maxChambersPerPlayer = getInteger(c, "count");
+                c.getSource().getEmbed().title(PLUGIN_CONFIG.maxChambersPerPlayer == 0
+                    ? "Max chambers per player: unlimited"
+                    : "Max chambers per player set to " + PLUGIN_CONFIG.maxChambersPerPlayer);
                 return OK;
             })));
 
@@ -436,8 +436,8 @@ public class PearlBotCommand extends Command {
             .addField("Discord Channel", PLUGIN_CONFIG.discordTrigger.channelId.isBlank()
                 ? "unset" : PLUGIN_CONFIG.discordTrigger.channelId)
             .addField("Linked Accounts", PLUGIN_CONFIG.linkedAccounts.size())
-            .addField("Max Pearls Per Player", PLUGIN_CONFIG.maxPearlsPerPlayer == 0
-                ? "unlimited" : String.valueOf(PLUGIN_CONFIG.maxPearlsPerPlayer));
+            .addField("Max Chambers Per Player", PLUGIN_CONFIG.maxChambersPerPlayer == 0
+                ? "unlimited" : String.valueOf(PLUGIN_CONFIG.maxChambersPerPlayer));
     }
 
     private UUID resolveUuid(String username) {
