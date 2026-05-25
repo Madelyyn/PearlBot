@@ -5,7 +5,6 @@ A [ZenithProxy](https://github.com/rfresh2/ZenithProxy) plugin that pulls stasis
 ## Features
 
 - Auto-detects stasis chambers with automatic owner resolution. 
-- Configurable pull trigger word (default `warp`): whisper `warp` in-game, type `!warp` in Discord.
 - Offline pulling: the bot walks to the trapdoor and waits, then fires the moment the owner logs on.
 - Discord ⇄ Minecraft account linking via short `!auth` codes (one Discord user → many MC accounts).
 - Whitelist for in-game whisper triggers.
@@ -17,18 +16,41 @@ A [ZenithProxy](https://github.com/rfresh2/ZenithProxy) plugin that pulls stasis
 2. Drop the jar into the `plugins/` folder next to your ZenithProxy launcher.
 3. Restart ZenithProxy. Plugins require the `java` release channel.
 
-Then in Zenith's terminal or Discord command channel:
+## Setup
+
+In Zenith's terminal or Discord command channel:
 
 ```
 pearlbot on
 pearlbot whitelist add <yourMcName>
 pearlbot idle here
-pearlbot discord channel <yourDiscordChannelId>
 ```
+
+It is recommended to adjust Zenith's antiAFK settings to avoid accidental pearl pulling:
+
+```
+antiAFK walk off
+antiAFK sneak off
+antiAFK jump off
+antiAFK swing on
+```
+
+## How to use
+
+You can create stasis chambers by throwing your pearl down a bubble column. The bot will automatically register it.
+
+In-game: whisper your PearlBot the trigger word (default `warp`). 
+Offline/Discord: in your configured Discord channel after authenticating, type the prefix and then the trigger word (default `!warp`). When you log back on, the PearlBot will instantly pull you. Useful for escaping logout traps and such.
+
+
+## Discord Authentication
 
 For the Discord channel, the bot needs **Read Messages** + **Send Messages** in that channel, and **Message Content Intent** enabled in the Discord Developer Portal.
 
-## Discord authentication
+```
+pearlbot discord on
+pearlbot discord channel <channelId>
+```
 
 To trigger pulls from Discord, link your Discord account to your Minecraft account once:
 
