@@ -40,6 +40,7 @@ antiAFK swing on
 You can create stasis chambers by throwing your pearl down a bubble column. The bot will automatically register it.
 
 In-game: whisper your PearlBot the trigger word (default `warp`). 
+
 Offline/Discord: in your configured Discord channel after authenticating, type the prefix and then the trigger word (default `!warp`). When you log back on, the PearlBot will instantly pull you. Useful for escaping logout traps and such.
 
 
