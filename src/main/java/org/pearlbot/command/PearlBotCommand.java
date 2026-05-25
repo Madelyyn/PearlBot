@@ -51,7 +51,11 @@ public class PearlBotCommand extends Command {
                 "pull <playerName>",
                 "cancel <playerName>",
                 "list",
+                "chamber remove <playerName>",
+                "chamber prune <radius>",
+                "chamber clear",
                 "pending",
+                "clearpending",
                 "idle <on/off>",
                 "idle here",
                 "idle <x> <y> <z> [radius]",
@@ -131,7 +135,7 @@ public class PearlBotCommand extends Command {
             StringBuilder sb = new StringBuilder();
             for (var entry : PLUGIN_CONFIG.chambers.entrySet()) {
                 var chamber = entry.getValue();
-                sb.append("- ").append(chamber.ownerUuid)
+                sb.append("- ").append(resolveName(chamber.ownerUuid))
                     .append(" @ ||")
                     .append(chamber.x).append(' ').append(chamber.y).append(' ').append(chamber.z)
                     .append("||\n");
@@ -141,6 +145,49 @@ public class PearlBotCommand extends Command {
                 .description(sb.toString().trim());
             return OK;
         }));
+
+        builder.then(literal("chamber")
+            .then(literal("clear").executes(c -> {
+                int n = PLUGIN_CONFIG.chambers.size();
+                PLUGIN_CONFIG.chambers.clear();
+                c.getSource().getEmbed().title("Cleared chambers (" + n + " removed)");
+                return OK;
+            }))
+            .then(literal("remove")
+                .then(argument("playerName", wordWithChars()).executes(c -> {
+                    String name = getString(c, "playerName");
+                    UUID uuid = resolveUuid(name);
+                    if (uuid == null) {
+                        c.getSource().getEmbed().title("Invalid username: " + name);
+                        return ERROR;
+                    }
+                    boolean removed = PLUGIN_CONFIG.chambers.values()
+                        .removeIf(ch -> uuid.equals(ch.ownerUuid));
+                    c.getSource().getEmbed().title(removed
+                        ? "Removed chamber for " + name
+                        : "No chamber registered for " + name);
+                    return OK;
+                })))
+            .then(literal("prune")
+                .then(argument("radius", integer(1)).executes(c -> {
+                    var player = com.zenith.Globals.CACHE.getPlayerCache().getThePlayer();
+                    if (player == null) {
+                        c.getSource().getEmbed().title("Not connected - cannot determine position");
+                        return ERROR;
+                    }
+                    int radius = getInteger(c, "radius");
+                    double px = player.getX(), py = player.getY(), pz = player.getZ();
+                    long sq = (long) radius * radius;
+                    int before = PLUGIN_CONFIG.chambers.size();
+                    PLUGIN_CONFIG.chambers.values().removeIf(ch -> {
+                        double dx = ch.x - px, dy = ch.y - py, dz = ch.z - pz;
+                        return dx * dx + dy * dy + dz * dz > sq;
+                    });
+                    int pruned = before - PLUGIN_CONFIG.chambers.size();
+                    c.getSource().getEmbed().title("Pruned " + pruned + " chamber(s) beyond "
+                        + radius + " blocks (" + PLUGIN_CONFIG.chambers.size() + " remaining)");
+                    return OK;
+                }))));
 
         builder.then(literal("pending").executes(c -> {
             var pending = PLUGIN_CONFIG.pendingPulls;
@@ -159,6 +206,17 @@ public class PearlBotCommand extends Command {
             c.getSource().getEmbed()
                 .title("Pending Pulls (" + pending.size() + ")")
                 .description(sb.toString().trim());
+            return OK;
+        }));
+
+        builder.then(literal("clearpending").executes(c -> {
+            AutoPearlModule mod = MODULE.get(AutoPearlModule.class);
+            int n = PLUGIN_CONFIG.pendingPulls.size();
+            for (var p : new java.util.ArrayList<>(PLUGIN_CONFIG.pendingPulls)) {
+                mod.cancelPull(p.ownerUuid);
+            }
+            PLUGIN_CONFIG.pendingPulls.clear();
+            c.getSource().getEmbed().title("Cleared pending pulls (" + n + " cancelled)");
             return OK;
         }));
 
@@ -368,5 +426,16 @@ public class PearlBotCommand extends Command {
         return PlayerListsManager.getProfileFromUsername(username)
             .map(profile -> profile.uuid())
             .orElse(null);
+    }
+
+    private String resolveName(UUID uuid) {
+        if (uuid == null) return "unknown";
+        var linked = PLUGIN_CONFIG.linkedAccounts.get(uuid);
+        if (linked != null && linked.mcUsername != null) return linked.mcUsername;
+        var whitelisted = PLUGIN_CONFIG.whitelist.players.get(uuid);
+        if (whitelisted != null && whitelisted.username != null) return whitelisted.username;
+        return PlayerListsManager.getProfileFromUUID(uuid)
+            .map(profile -> profile.name())
+            .orElse(uuid.toString());
     }
 }

@@ -142,7 +142,6 @@ public class AutoPearlModule extends Module {
         }
 
         enqueuePull(uuid, name, chamber);
-        sendWhisper(name, "Pull queued.");
     }
 
     private void handleAuthWhisper(UUID mcUuid, String mcUsername, String code) {
