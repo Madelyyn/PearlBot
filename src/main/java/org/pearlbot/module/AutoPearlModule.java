@@ -23,6 +23,7 @@ import com.zenith.discord.Embed;
 import com.zenith.event.chat.WhisperChatEvent;
 import com.zenith.event.client.ClientBotTick;
 import com.zenith.feature.pathfinder.goals.GoalNear;
+import com.zenith.feature.whitelist.PlayerListsManager;
 import com.zenith.mc.block.BlockPos;
 import com.zenith.module.api.Module;
 import com.zenith.util.ChatUtil;
@@ -51,6 +52,7 @@ public class AutoPearlModule extends Module {
     private static final long IDLE_RETURN_DELAY_MS = 1500L;
     private static final String DISCORD_AUTH_CMD = "!auth";
     private static final String INGAME_AUTH_CMD = "!auth";
+    private static final String INGAME_LIST_CMD = "list";
 
     private long lastAttemptMs = 0L;
     private PearlBotConfig.PendingPull activePull = null;
@@ -129,6 +131,17 @@ public class AutoPearlModule extends Module {
             return;
         }
 
+        if (firstWord.equals(INGAME_LIST_CMD)) {
+            if (PLUGIN_CONFIG.whitelist.enabled && !PLUGIN_CONFIG.whitelist.players.containsKey(uuid)) return;
+            long count = PLUGIN_CONFIG.chambers.values().stream()
+                .filter(c -> uuid.equals(c.ownerUuid))
+                .count();
+            int max = PLUGIN_CONFIG.maxPearlsPerPlayer;
+            String countStr = max > 0 ? count + "/" + max : String.valueOf(count);
+            sendWhisper(name, "You have " + countStr + " pearl(s) stasised.");
+            return;
+        }
+
         if (!firstWord.equals(triggerWordIngame())) return;
 
         if (PLUGIN_CONFIG.whitelist.enabled && !PLUGIN_CONFIG.whitelist.players.containsKey(uuid)) {
@@ -199,6 +212,10 @@ public class AutoPearlModule extends Module {
 
         if (!firstWord.equals(triggerWordDiscord())) return;
 
+        String targetName = content.split("\\s+", 2).length > 1
+            ? content.split("\\s+", 2)[1].trim().toLowerCase()
+            : null;
+
         List<PearlBotConfig.LinkedAccount> linked = PLUGIN_CONFIG.linkedAccounts.entrySet().stream()
             .filter(e -> discordUserId.equals(e.getValue().discordUserId))
             .map(Map.Entry::getValue)
@@ -208,10 +225,21 @@ public class AutoPearlModule extends Module {
             return;
         }
 
+        if (linked.size() > 1 && targetName == null) {
+            String names = linked.stream()
+                .map(a -> a.mcUsername != null ? a.mcUsername : "?")
+                .collect(java.util.stream.Collectors.joining(", "));
+            channel.sendMessage("<@" + discordUserId + "> Accounts linked: " + names
+                + ". Please type `" + triggerWordDiscord() + " <username>` to pull a specific account.").queue();
+            return;
+        }
+
         List<String> queued = new java.util.ArrayList<>();
         List<String> noChamber = new java.util.ArrayList<>();
         List<String> alreadyPending = new java.util.ArrayList<>();
+        List<String> notFound = new java.util.ArrayList<>();
         for (var account : linked) {
+            if (targetName != null && !targetName.equalsIgnoreCase(account.mcUsername)) continue;
             UUID mcUuid = lookupMcUuid(account);
             if (mcUuid == null) continue;
             PearlBotConfig.StasisChamber chamber = findChamberFor(mcUuid);
@@ -224,6 +252,15 @@ public class AutoPearlModule extends Module {
             } else {
                 alreadyPending.add(account.mcUsername);
             }
+        }
+
+        if (targetName != null && queued.isEmpty() && noChamber.isEmpty() && alreadyPending.isEmpty()) {
+            String names = linked.stream()
+                .map(a -> a.mcUsername != null ? a.mcUsername : "?")
+                .collect(java.util.stream.Collectors.joining(", "));
+            channel.sendMessage("<@" + discordUserId + "> No linked account named `" + targetName
+                + "`. Accounts linked: " + names + ".").queue();
+            return;
         }
 
         StringBuilder reply = new StringBuilder("<@").append(discordUserId).append("> ");
@@ -273,6 +310,37 @@ public class AutoPearlModule extends Module {
         if (name == null || name.isBlank()) return;
         String suffix = String.format("%08x", ThreadLocalRandom.current().nextInt());
         sendClientPacketAsync(ChatUtil.getWhisperChatPacket(name, message + " - " + suffix));
+    }
+
+    public void checkAndEnforceMaxPearls(UUID ownerUuid) {
+        int max = PLUGIN_CONFIG.maxPearlsPerPlayer;
+        if (max <= 0) return;
+        long count = PLUGIN_CONFIG.chambers.values().stream()
+            .filter(c -> ownerUuid.equals(c.ownerUuid))
+            .count();
+        if (count <= max) return;
+        String name = resolvePlayerName(ownerUuid);
+        info("Player {} has {} pearl(s), exceeding max of {}; auto-pulling",
+            name != null ? name : ownerUuid, count, max);
+        if (name != null) {
+            sendWhisper(name, "You have " + count + " pearl(s) but the max is " + max
+                + "! Automatically pulling your oldest pearl.");
+        }
+        PearlBotConfig.StasisChamber chamber = findChamberFor(ownerUuid);
+        if (chamber != null) {
+            enqueuePull(ownerUuid, name, chamber);
+        }
+    }
+
+    private String resolvePlayerName(UUID uuid) {
+        if (uuid == null) return null;
+        var linked = PLUGIN_CONFIG.linkedAccounts.get(uuid);
+        if (linked != null && linked.mcUsername != null) return linked.mcUsername;
+        var whitelisted = PLUGIN_CONFIG.whitelist.players.get(uuid);
+        if (whitelisted != null && whitelisted.username != null) return whitelisted.username;
+        return PlayerListsManager.getProfileFromUUID(uuid)
+            .map(p -> p.name())
+            .orElse(null);
     }
 
     private int remainingPearlsFor(UUID ownerUuid) {

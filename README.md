@@ -9,6 +9,8 @@ A [ZenithProxy](https://github.com/rfresh2/ZenithProxy) plugin that pulls stasis
 - Discord ⇄ Minecraft account linking via short `!auth` codes (one Discord user → many MC accounts).
 - Whitelist for in-game whisper triggers.
 - AFK-return position after each pull.
+- Configurable per-player pearl cap — the bot tells the player off and auto-pulls when they exceed it.
+- Players can whisper `list` to check how many pearls they have stasised.
 
 ## Install
 
@@ -39,9 +41,11 @@ antiAFK swing on
 
 You can create stasis chambers by throwing your pearl down a bubble column. The bot will automatically register it.
 
-**In-game**: whisper your PearlBot the trigger word (default `warp`). 
+**In-game**: whisper your PearlBot the trigger word (default `warp`). You can also whisper `list` to see how many pearls you currently have stasised.
 
 **Offline/Discord**: in your configured Discord channel after authenticating, type the prefix and then the trigger word (default `!warp`). When you log back on, the PearlBot will instantly pull you. Useful for escaping logout traps and such.
+
+To limit how many pearls each player can have stasised at once, use `pearlbot maxpearls <count>` (set to `0` for no limit). If a player exceeds the cap, the bot will whisper them a warning and automatically queue a pull for their oldest pearl.
 
 
 ## Discord Authentication
