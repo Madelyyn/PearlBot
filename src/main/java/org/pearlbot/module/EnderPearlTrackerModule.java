@@ -37,6 +37,7 @@ import java.util.UUID;
 import static com.github.rfresh2.EventConsumer.of;
 import static com.zenith.Globals.BLOCK_DATA;
 import static com.zenith.Globals.CACHE;
+import static com.zenith.Globals.MODULE;
 import static org.pearlbot.PearlBotPlugin.PLUGIN_CONFIG;
 
 public class EnderPearlTrackerModule extends Module {
@@ -213,6 +214,10 @@ public class EnderPearlTrackerModule extends Module {
         chamber.ownerUuid = ownerUuid;
         chamber.pendingOwnerEntityId = pendingOwnerEntityId;
         PLUGIN_CONFIG.chambers.put(pearlUuid, chamber);
+
+        if (ownerUuid != null) {
+            MODULE.get(AutoPearlModule.class).checkAndEnforceMaxChambers(ownerUuid);
+        }
 
         String ownerLabel = ownerUuid != null
             ? ownerUuid.toString()

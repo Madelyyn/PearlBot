@@ -72,7 +72,8 @@ public class PearlBotCommand extends Command {
                 "discord <on/off>",
                 "discord channel <channelId>",
                 "links",
-                "unlink <playerName>"
+                "unlink <playerName>",
+                "maxchambers <count>"
             )
             .aliases("pb")
             .build();
@@ -132,13 +133,19 @@ public class PearlBotCommand extends Command {
                 c.getSource().getEmbed().title("No chambers registered");
                 return OK;
             }
+            var byOwner = new java.util.LinkedHashMap<UUID, java.util.List<PearlBotConfig.StasisChamber>>();
+            for (var chamber : PLUGIN_CONFIG.chambers.values()) {
+                byOwner.computeIfAbsent(chamber.ownerUuid, k -> new java.util.ArrayList<>()).add(chamber);
+            }
+            int max = PLUGIN_CONFIG.maxChambersPerPlayer;
             StringBuilder sb = new StringBuilder();
-            for (var entry : PLUGIN_CONFIG.chambers.entrySet()) {
-                var chamber = entry.getValue();
-                sb.append("- ").append(resolveName(chamber.ownerUuid))
-                    .append(" @ ||")
-                    .append(chamber.x).append(' ').append(chamber.y).append(' ').append(chamber.z)
-                    .append("||\n");
+            for (var entry : byOwner.entrySet()) {
+                var list = entry.getValue();
+                String countStr = max > 0 ? list.size() + "/" + max : String.valueOf(list.size());
+                sb.append("**").append(resolveName(entry.getKey())).append("** (").append(countStr).append(")\n");
+                for (var ch : list) {
+                    sb.append("  - ||").append(ch.x).append(' ').append(ch.y).append(' ').append(ch.z).append("||\n");
+                }
             }
             c.getSource().getEmbed()
                 .title("Chambers (" + PLUGIN_CONFIG.chambers.size() + ")")
@@ -395,6 +402,15 @@ public class PearlBotCommand extends Command {
                 return OK;
             })));
 
+        builder.then(literal("maxchambers")
+            .then(argument("count", integer(0)).executes(c -> {
+                PLUGIN_CONFIG.maxChambersPerPlayer = getInteger(c, "count");
+                c.getSource().getEmbed().title(PLUGIN_CONFIG.maxChambersPerPlayer == 0
+                    ? "Max chambers per player: unlimited"
+                    : "Max chambers per player set to " + PLUGIN_CONFIG.maxChambersPerPlayer);
+                return OK;
+            })));
+
         return builder;
     }
 
@@ -419,7 +435,9 @@ public class PearlBotCommand extends Command {
             .addField("Discord Triggers", toggleStr(PLUGIN_CONFIG.discordTrigger.enabled))
             .addField("Discord Channel", PLUGIN_CONFIG.discordTrigger.channelId.isBlank()
                 ? "unset" : PLUGIN_CONFIG.discordTrigger.channelId)
-            .addField("Linked Accounts", PLUGIN_CONFIG.linkedAccounts.size());
+            .addField("Linked Accounts", PLUGIN_CONFIG.linkedAccounts.size())
+            .addField("Max Chambers Per Player", PLUGIN_CONFIG.maxChambersPerPlayer == 0
+                ? "unlimited" : String.valueOf(PLUGIN_CONFIG.maxChambersPerPlayer));
     }
 
     private UUID resolveUuid(String username) {
